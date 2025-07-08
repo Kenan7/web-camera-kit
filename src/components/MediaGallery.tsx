@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, X, Play, Image as ImageIcon, Video, Trash2, Camera } from 'lucide-react';
+import { Download, X, Play, Image as ImageIcon, Video, Trash2, Camera, Sparkles } from 'lucide-react';
 import { CapturedMedia } from '../types/media';
 
 interface MediaGalleryProps {
@@ -351,6 +351,32 @@ export const MediaGallery: React.FC<MediaGalleryProps> = ({
                       className="w-full h-full"
                       isMobile={isMobile}
                     />
+                  )}
+
+                  {/* Gemini Analysis Badge - For Videos Only */}
+                  {item.type === 'video' && item.geminiAnalysis && (
+                    <div className="absolute top-2 right-2 z-10">
+                      {item.geminiAnalysis.isProcessing ? (
+                        <div className="bg-blue-600/80 backdrop-blur-sm rounded-full p-1.5 border border-blue-400/30">
+                          <div className="animate-spin rounded-full h-3 w-3 border-b border-white"></div>
+                        </div>
+                      ) : item.geminiAnalysis.pushupData ? (
+                        <div className="bg-purple-600/80 backdrop-blur-sm rounded-lg px-2 py-1 border border-purple-400/30">
+                          <div className="flex items-center space-x-1">
+                            <span className="text-white text-xs">💪</span>
+                            <span className="text-white text-xs font-medium">{item.geminiAnalysis.pushupData.summary.totalCount}</span>
+                          </div>
+                        </div>
+                      ) : item.geminiAnalysis.result ? (
+                        <div className="bg-green-600/80 backdrop-blur-sm rounded-full p-1.5 border border-green-400/30">
+                          <Sparkles className="h-3 w-3 text-white" />
+                        </div>
+                      ) : item.geminiAnalysis.error ? (
+                        <div className="bg-red-600/80 backdrop-blur-sm rounded-full p-1.5 border border-red-400/30">
+                          <X className="h-3 w-3 text-white" />
+                        </div>
+                      ) : null}
+                    </div>
                   )}
 
                   {/* Hover Actions - Desktop Only */}

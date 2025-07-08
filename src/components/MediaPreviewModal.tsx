@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Download, X, Trash2, Share2, ArrowLeft } from 'lucide-react';
 import { useMobileDetection } from '../hooks/useMobileDetection';
 import { CapturedMedia } from '../types/media';
+import { PushupAnalysisOverlay } from './PushupAnalysisOverlay';
 
 interface MediaPreviewModalProps {
   media: CapturedMedia;
@@ -19,9 +20,11 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
   onRemove 
 }) => {
   const [showControls, setShowControls] = useState(false);
+  const [showAnalysisOverlay, setShowAnalysisOverlay] = useState(false);
   
   const { isMobile } = useMobileDetection();
   const imageRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
     const video = e.target as HTMLVideoElement;
@@ -185,8 +188,9 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
               />
             </div>
           ) : (
-            <div className="w-full h-full flex items-center justify-center p-4">
+            <div className="w-full h-full flex items-center justify-center p-4 relative">
               <video
+                ref={videoRef}
                 src={media.url}
                 controls={showControls}
                 onClick={handleVideoClick}
@@ -200,9 +204,97 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
                   objectFit: 'contain'
                 }}
               />
+              
+              {/* Pushup Analysis Overlay */}
+              {media.geminiAnalysis?.pushupData && (
+                <PushupAnalysisOverlay
+                  analysis={media.geminiAnalysis.pushupData}
+                  videoRef={videoRef}
+                  isVisible={showAnalysisOverlay}
+                  onToggle={() => setShowAnalysisOverlay(!showAnalysisOverlay)}
+                />
+              )}
             </div>
           )}
         </div>
+
+        {/* Gemini Analysis Section - For Videos Only (fallback for raw text) */}
+        {media.type === 'video' && media.geminiAnalysis && !media.geminiAnalysis.pushupData && (
+          <div className="mt-4 mb-2 mx-4 p-4 bg-zinc-800/50 backdrop-blur-sm rounded-lg border border-zinc-700">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white text-sm font-bold">AI</span>
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-gray-100">Gemini Analysis</h3>
+                  {media.geminiAnalysis.result && (
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => {
+                          console.log('Raw analysis result:', media.geminiAnalysis?.result);
+                          console.log('Pushup data parsed:', media.geminiAnalysis?.pushupData);
+                          
+                          // Try to reparse the result
+                          if (media.geminiAnalysis?.result) {
+                            import('../utils/analysisParser').then(({ parseAnalysisResult }) => {
+                              const parsed = parseAnalysisResult(media.geminiAnalysis!.result);
+                              console.log('Reparse attempt result:', parsed);
+                              if (parsed) {
+                                alert('JSON parsing successful! Refresh the page to see the interactive overlay.');
+                              } else {
+                                alert('JSON parsing failed. Check console for details.');
+                              }
+                            });
+                          }
+                        }}
+                        className="text-xs text-blue-400 hover:text-blue-300"
+                      >
+                        🔄 Reparse
+                      </button>
+                      <button
+                        onClick={() => {
+                          console.log('Raw analysis result:', media.geminiAnalysis?.result);
+                          console.log('Pushup data parsed:', media.geminiAnalysis?.pushupData);
+                        }}
+                        className="text-xs text-gray-400 hover:text-gray-300"
+                      >
+                        Debug
+                      </button>
+                    </div>
+                  )}
+                </div>
+                
+                {media.geminiAnalysis.isProcessing ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
+                    <span className="text-sm text-zinc-400">Analyzing video...</span>
+                  </div>
+                ) : media.geminiAnalysis.error ? (
+                  <div className="text-sm text-red-400">
+                    <span className="font-medium">Analysis failed:</span> {media.geminiAnalysis.error}
+                  </div>
+                ) : media.geminiAnalysis.result ? (
+                  <div className="text-sm text-zinc-300 leading-relaxed">
+                    {media.geminiAnalysis.result}
+                  </div>
+                ) : (
+                  <div className="text-sm text-zinc-500 italic">
+                    No analysis available
+                  </div>
+                )}
+                
+                {!media.geminiAnalysis.isProcessing && (
+                  <div className="mt-2 text-xs text-zinc-500">
+                    Analyzed on {new Date(media.geminiAnalysis.timestamp).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Controls - Fixed position below media */}
         <div className="mt-6 flex-shrink-0">

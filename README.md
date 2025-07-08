@@ -49,6 +49,7 @@ A **lightweight, mobile-optimized camera boilerplate** designed for AI vision an
 ## 🛠️ Tech Stack
 
 - **Frontend**: React 18 + TypeScript
+- **AI Integration**: Google Gemini API for video analysis
 - **Styling**: Tailwind CSS with custom animations
 - **Icons**: Lucide React
 - **Animations**: GSAP
@@ -87,12 +88,32 @@ Works with any static hosting: Vercel, GitHub Pages, AWS S3, Firebase Hosting.
 
 ### Environment Variables
 ```env
+# Google Gemini API Configuration (for video analysis)
+VITE_GEMINI_API_KEY=your_gemini_api_key_here
+
 # Disable loading screen (optional)
 VITE_APP_DISABLE_LOADING_SCREEN=false
 
 # Disable PWA features (optional)
 VITE_APP_DISABLE_PWA=false
 ```
+
+### Google Gemini Integration
+This kit includes built-in support for Google Gemini API video analysis:
+
+1. **Get API Key**: Visit [Google AI Studio](https://ai.google.dev/gemini-api/docs/api-key) to get your free API key
+2. **Set Environment Variable**: Create a `.env` file with your API key:
+   ```env
+   VITE_GEMINI_API_KEY=your_api_key_here
+   ```
+3. **Video Analysis**: Videos are automatically processed with Gemini when recorded
+4. **Custom Prompts**: Modify the analysis prompt in `src/hooks/useMediaCapture.ts`
+
+The integration supports:
+- Automatic video analysis on recording
+- Customizable analysis prompts
+- Persistent storage of analysis results
+- Error handling and retry logic
 
 ### Camera Settings
 ```typescript
@@ -129,6 +150,7 @@ src/
 │   └── useMobileDetection.ts # Device detection
 ├── utils/               # Utility functions
 │   ├── indexedDb.ts         # Database operations
+│   ├── geminiService.ts     # Google Gemini API integration
 │   └── pwa.ts              # PWA management
 └── types/               # TypeScript definitions
 ```
@@ -158,6 +180,24 @@ npm run lint         # Run ESLint
 ```
 
 ### Integration Examples
+
+#### Google Gemini Video Analysis
+```typescript
+import { geminiService } from './utils/geminiService';
+
+const analyzeVideo = async (videoBlob: Blob) => {
+  const result = await geminiService.processVideo(videoBlob, {
+    prompt: 'Describe the actions and objects in this video in detail.',
+    model: 'gemini-1.5-flash'
+  });
+  
+  if (result.success) {
+    console.log('Analysis:', result.result);
+  } else {
+    console.error('Error:', result.error);
+  }
+};
+```
 
 #### AI Model Integration
 ```typescript

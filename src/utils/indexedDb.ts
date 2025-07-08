@@ -9,6 +9,13 @@ export interface StoredMediaData {
   blob: Blob;
   timestamp: number;
   filename: string;
+  geminiAnalysis?: {
+    result: string;
+    prompt: string;
+    timestamp: number;
+    isProcessing?: boolean;
+    error?: string;
+  };
 }
 
 export class MediaDatabase {

@@ -9,7 +9,8 @@ import { MediaPreviewModal } from './components/MediaPreviewModal';
 import { InstallPrompt } from './components/InstallPrompt';
 import { useMediaCapture } from './hooks/useMediaCapture';
 import { useMobileDetection } from './hooks/useMobileDetection';
-import { CameraMode, CameraFacing } from './types/media';
+import { CameraMode, CameraFacing, CapturedMedia } from './types/media';
+import './utils/testGemini'; // Import test utility for console access
 
 type View = 'camera' | 'gallery' | 'settings';
 
@@ -109,13 +110,13 @@ function App() {
           console.log('PWA: Permissions API not available, testing with getUserMedia...');
           
           try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
+            const stream = await (navigator as any).mediaDevices.getUserMedia({ 
               video: true, 
               audio: false 
             });
             
             // If we get here, permission is granted
-            stream.getTracks().forEach(track => track.stop());
+            stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
             setPermissionState('granted');
             
           } catch (error) {
@@ -315,8 +316,6 @@ function App() {
                   onGalleryClick={() => setCurrentView('gallery')}
                   capturedMediaCount={capturedMedia.length}
                   isPWA={isPWA}
-                  shouldShowInitialOverlay={shouldShowCameraOverlay}
-                  onOverlayShown={() => setShouldShowCameraOverlay(false)}
                 />
               </div>
             </div>

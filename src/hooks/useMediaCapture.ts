@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
-import { CapturedMedia, CameraMode } from '../types/media';
+import { CapturedMedia, CameraMode, PushupAnalysis } from '../types/media';
 import { mediaDatabase, StoredMediaData } from '../utils/indexedDb';
+import { geminiService } from '../utils/geminiService';
+import { parseAnalysisResult, reprocessAnalysis } from '../utils/analysisParser';
 
 export const useMediaCapture = () => {
   const [capturedMedia, setCapturedMedia] = useState<CapturedMedia[]>([]);
@@ -22,7 +24,8 @@ export const useMediaCapture = () => {
             blob: stored.blob,
             timestamp: stored.timestamp,
             filename: stored.filename,
-            indexedDbId: stored.id // Store the IndexedDB ID for future reference
+            indexedDbId: stored.id, // Store the IndexedDB ID for future reference
+            geminiAnalysis: stored.geminiAnalysis
           }));
           
           // Sort by timestamp (newest first)
@@ -30,6 +33,25 @@ export const useMediaCapture = () => {
           
           setCapturedMedia(restoredMedia);
           console.log(`Restored ${restoredMedia.length} media items from IndexedDB`);
+          
+          // Reprocess any analysis that might have JSON but wasn't parsed
+          setTimeout(() => {
+            reprocessAnalysis(restoredMedia, (id, pushupData) => {
+              setCapturedMedia(prev => 
+                prev.map(m => 
+                  m.id === id 
+                    ? { 
+                        ...m, 
+                        geminiAnalysis: {
+                          ...m.geminiAnalysis!,
+                          pushupData
+                        }
+                      }
+                    : m
+                )
+              );
+            });
+          }, 1000);
         }
       } catch (error) {
         console.error('Failed to load persisted media:', error);
@@ -52,28 +74,173 @@ export const useMediaCapture = () => {
     };
   }, []);
 
+  // Function to process video with Gemini
+  const processVideoWithGemini = useCallback(async (media: CapturedMedia) => {
+    if (media.type !== 'video' || !media.geminiAnalysis) return;
+
+    try {
+      const prompt = media.geminiAnalysis.prompt || 'Analyze this video and describe what you see in detail.';
+      
+      const result = await geminiService.processVideo(media.blob, { prompt });
+      
+      if (result.success && result.result) {
+        // Parse JSON if it's a pushup analysis
+        const pushupData = parseAnalysisResult(result.result) || undefined;
+
+        // Update the media with Gemini results
+        const updatedAnalysis = {
+          ...media.geminiAnalysis,
+          result: result.result,
+          pushupData,
+          isProcessing: false
+        };
+
+        // Update in state
+        setCapturedMedia(prev => 
+          prev.map(m => 
+            m.id === media.id 
+              ? { ...m, geminiAnalysis: updatedAnalysis }
+              : m
+          )
+        );
+
+        // Update in IndexedDB
+        if (media.indexedDbId) {
+          const updatedStoredData: StoredMediaData = {
+            id: media.id,
+            type: media.type,
+            blob: media.blob,
+            timestamp: media.timestamp,
+            filename: media.filename,
+            geminiAnalysis: updatedAnalysis
+          };
+          
+          await mediaDatabase.storeMedia(updatedStoredData);
+        }
+
+        console.log('Gemini analysis completed for video:', media.id);
+      } else {
+        // Handle error
+        const errorAnalysis = {
+          ...media.geminiAnalysis,
+          isProcessing: false,
+          error: result.error || 'Analysis failed'
+        };
+
+        setCapturedMedia(prev => 
+          prev.map(m => 
+            m.id === media.id 
+              ? { ...m, geminiAnalysis: errorAnalysis }
+              : m
+          )
+        );
+
+        console.error('Gemini analysis failed for video:', media.id, result.error);
+      }
+    } catch (error) {
+      console.error('Error during Gemini processing:', error);
+      
+      // Update with error state
+      setCapturedMedia(prev => 
+        prev.map(m => 
+          m.id === media.id 
+            ? { 
+                ...m, 
+                geminiAnalysis: {
+                  ...m.geminiAnalysis!,
+                  isProcessing: false,
+                  error: 'Processing failed'
+                }
+              }
+            : m
+        )
+      );
+    }
+  }, []);
+
   const addMedia = useCallback(async (media: CapturedMedia) => {
     try {
+      // For videos, start Gemini processing immediately
+      let mediaWithProcessing = media;
+      
+      if (media.type === 'video' && geminiService.isConfigured()) {
+        // Add processing indicator
+        mediaWithProcessing = {
+          ...media,
+          geminiAnalysis: {
+            result: '',
+            prompt: `Analyze this pushup video and provide detailed structured information. Return ONLY a valid JSON object with this exact structure:
+
+{
+  "summary": {
+    "totalCount": <number>,
+    "validPushups": <number>,
+    "invalidPushups": <number>,
+    "duration": "<MM:SS>",
+    "averageRepsPerMinute": <number>
+  },
+  "quality": {
+    "overallScore": <1-10>,
+    "formNotes": ["<note1>", "<note2>"],
+    "commonIssues": ["<issue1>", "<issue2>"]
+  },
+  "timeline": [
+    {
+      "repNumber": <number>,
+      "timestamp": "<MM:SS>",
+      "timestampSeconds": <seconds>,
+      "quality": "<excellent|good|poor|invalid>",
+      "notes": "<optional notes>"
+    }
+  ],
+  "insights": {
+    "bestRep": {
+      "repNumber": <number>,
+      "timestamp": "<MM:SS>",
+      "timestampSeconds": <seconds>,
+      "reason": "<explanation>"
+    },
+    "improvementAreas": ["<area1>", "<area2>"],
+    "strengths": ["<strength1>", "<strength2>"]
+  }
+}
+
+Focus on: rep count, form quality, timestamps, and actionable feedback. Be precise with timestamps.`,
+            timestamp: Date.now(),
+            isProcessing: true
+          }
+        };
+        
+        console.log('Starting Gemini video analysis for:', media.id);
+      }
+
       // Store in IndexedDB first
       const storedData: StoredMediaData = {
-        id: media.id,
-        type: media.type,
-        blob: media.blob,
-        timestamp: media.timestamp,
-        filename: media.filename
+        id: mediaWithProcessing.id,
+        type: mediaWithProcessing.type,
+        blob: mediaWithProcessing.blob,
+        timestamp: mediaWithProcessing.timestamp,
+        filename: mediaWithProcessing.filename,
+        geminiAnalysis: mediaWithProcessing.geminiAnalysis
       };
       
       const indexedDbId = await mediaDatabase.storeMedia(storedData);
       
       // Add IndexedDB ID to media object
       const mediaWithId: CapturedMedia = {
-        ...media,
+        ...mediaWithProcessing,
         indexedDbId
       };
       
       // Update state
       setCapturedMedia(prev => [mediaWithId, ...prev]);
       console.log('Media added and persisted:', media.id);
+
+      // Process video with Gemini in background if applicable
+      if (media.type === 'video' && geminiService.isConfigured()) {
+        processVideoWithGemini(mediaWithId);
+      }
+      
     } catch (error) {
       console.error('Failed to persist media, adding to memory only:', error);
       // Still add to memory even if persistence fails
